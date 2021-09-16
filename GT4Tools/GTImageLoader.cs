@@ -15,23 +15,38 @@ using ICSharpCodeInflater = ICSharpCode.SharpZipLib.Zip.Compression.Inflater;
 using PDISTD;
 namespace GT4Tools
 {
-    class GTEngineCoreDecrypter
+    public class GTImageLoader
     {
         /* 0x00 - 8 bytes IV
          * 0x08 - Unk byte
          * 0x09 - Unk byte
          * 0x10 - Raw Size 
          */
+        
+        public int EntryPoint { get; set; }
+        public List<ElfSegment> Segments { get; set; }
 
         // Mainly intended/implemented for GT4 Online's CORE.GT4 as it has some extra encryption
-        public static void Decrypt(byte[] file)
+        public void Load(byte[] file)
         {
-            // Crc of the file at the end
-            Console.WriteLine($"CRC: {CRC32_CoreGT4.crc32(file.AsSpan(0), file.Length - 4):X8}");
+            // Crc of the file is at the end
+
+            uint crcFile = CRC32_CoreGT4.crc32(file.AsSpan(0), file.Length - 4);
+            Console.WriteLine($"CRC: {crcFile:X8}");
 
             SpanReader sr = new SpanReader(file);
-            byte[] iv = sr.ReadBytes(8);
+            sr.Position = file.Length - 4;
+            uint crcTarget = sr.ReadUInt32();
 
+            if (crcFile != crcTarget)
+            {
+                Console.WriteLine("CRC did not match");
+                return;
+            }
+
+            // Begin decrypt
+            sr.Position = 0;
+            byte[] iv = sr.ReadBytes(8);
             byte[] key = GetKey();
             var s = new Salsa20(key, key.Length);
             s.SetIV(iv);
@@ -50,6 +65,7 @@ namespace GT4Tools
             d.SetInput(deflateData);
             d.Inflate(inflatedData);
 
+            // Read Header
             SpanReader sr2 = new SpanReader(inflatedData);
             short header1Size = sr2.ReadInt16();
             byte[] header1 = sr2.ReadBytes(header1Size);
@@ -57,27 +73,46 @@ namespace GT4Tools
             short header2Size = sr2.ReadInt16();
             byte[] header2 = sr2.ReadBytes(header2Size);
 
-            int nSection = sr2.ReadInt32();
-            int entrypoint = sr2.ReadInt32();
-
+            // Optionally check sha but this needs more investigation
             var unk = new BufferReverser();
             unk.InitReverse(header1);
 
             byte[] elfData = inflatedData.Skip(0x104).ToArray();
             using (var hash = SHA512.Create())
             {
+                // Used to check against the two 0x80 blobs, but those i don't know how they generate the hash
                 var hashedInputBytes = hash.ComputeHash(elfData);
+            }
+
+            int nSection = sr2.ReadInt32();
+            EntryPoint = sr2.ReadInt32();
+            Segments = new List<ElfSegment>(nSection);
+
+            for (int i = 0; i < nSection; i++)
+            {
+                var segment = new ElfSegment();
+                segment.TargetOffset = sr2.ReadInt32();
+                segment.Size = sr2.ReadInt32();
+                segment.Data = sr2.ReadBytes(segment.Size);
+
+                Segments.Add(segment);
             }
         }
 
-        public static readonly byte[] k = new byte[16]
+        public void Build()
+        {
+            ElfBuilder elfBuilder = new ElfBuilder();
+            elfBuilder.BuildFromInfo("test.elf", this) ;
+        }
+
+        private static readonly byte[] k = new byte[16]
         {
             // "PolyphonyDigital"
             0x05, 0x3A, 0x39, 0x2C, 0x25, 0x3D, 0x3A, 0x3B,
             0x2C, 0x11, 0x3C, 0x32, 0x3C, 0x21, 0x34, 0x39,
         };
 
-        public static byte[] GetKey()
+        private static byte[] GetKey()
         {
             byte[] key = new byte[16];
             for (int i = 0; i < 16; i++)
