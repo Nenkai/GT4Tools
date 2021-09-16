@@ -10,6 +10,8 @@ namespace GT4Tools
     // Warning: Dirty
     public class ElfBuilder
     {
+        public const int BssSize = 0x200000;
+
         public void BuildFromInfo(string fileName, GTImageLoader file)
         {
             using var ms = new FileStream(fileName, FileMode.Create);
@@ -65,7 +67,7 @@ namespace GT4Tools
 
             long dataSectionOffset = bs.Position;
             bs.WriteBytes(file.Segments[2].Data);
-            bs.Position += 0x9EE4C; // to fit bss?
+            bs.Position += BssSize; // to fit bss?
             bs.Align(0x1000, grow: true);
 
             long lastPos = bs.Position;
@@ -77,7 +79,7 @@ namespace GT4Tools
             bs.WriteInt32(file.Segments[0].TargetOffset); // Virtual address
             bs.WriteInt32(file.Segments[0].TargetOffset); // Physical address
             bs.WriteInt32(file.Segments[0].Size); // File length
-            bs.WriteInt32(file.Segments[0].Size + 0x9EE4C); // Ram length
+            bs.WriteInt32(file.Segments[0].Size + BssSize); // Ram length
             bs.WriteInt32(4); // Flags, PF_Read
             bs.WriteInt32(4); // Align
 
@@ -154,7 +156,7 @@ namespace GT4Tools
 
             bs.WriteInt32((int)dir[".data"]);
             bs.WriteInt32(1); // Type
-            bs.WriteInt32(3); // Flags
+            bs.WriteInt32(2); // Flags
             bs.WriteInt32(file.Segments[2].TargetOffset); // Addr
             bs.WriteInt32(0x561018); // Offset
             bs.WriteInt32(file.Segments[2].Size); // Size
@@ -168,7 +170,7 @@ namespace GT4Tools
             bs.WriteInt32(3); // Flags
             bs.WriteInt32(file.Segments[2].TargetOffset + file.Segments[2].Size); // Addr
             bs.WriteInt32((int)shstrTabOffset); // Offset
-            bs.WriteInt32(0x9EE4C); // Size
+            bs.WriteInt32(BssSize); // Size
             bs.WriteInt32(0); // Link
             bs.WriteInt32(0); // Info
             bs.WriteInt32(0x40); // Addralign
