@@ -11,6 +11,7 @@ namespace GT4Tools
     {
         static void Main(string[] args)
         {
+            GTEngineCoreDecrypter.Decrypt(File.ReadAllBytes(@"D:\Modding_Research\Gran_Turismo\Gran_Turismo_4_Online_Test_Version\CORE.GT4"));
 
         }
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.IO;
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 
 using PDISTD;
 namespace GT4Tools

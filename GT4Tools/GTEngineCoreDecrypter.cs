@@ -2,39 +2,72 @@
 using System.Collections.Generic;
 using System.Text;
 using System.IO;
+using System.IO.Compression;
 using System.Buffers.Binary;
+using System.Security.Cryptography;
+using System.Linq;
+
+using Syroot.BinaryData.Core;
+using Syroot.BinaryData.Memory;
+
+using ICSharpCodeInflater = ICSharpCode.SharpZipLib.Zip.Compression.Inflater;
 
 using PDISTD;
 namespace GT4Tools
 {
     class GTEngineCoreDecrypter
     {
+        /* 0x00 - 8 bytes IV
+         * 0x08 - Unk byte
+         * 0x09 - Unk byte
+         * 0x10 - Raw Size 
+         */
+
         // Mainly intended/implemented for GT4 Online's CORE.GT4 as it has some extra encryption
-        public void Decrypt(byte[] file)
+        public static void Decrypt(byte[] file)
         {
             // Crc of the file at the end
             Console.WriteLine($"CRC: {CRC32_CoreGT4.crc32(file.AsSpan(0), file.Length - 4):X8}");
 
+            SpanReader sr = new SpanReader(file);
+            byte[] iv = sr.ReadBytes(8);
+
             byte[] key = GetKey();
             var s = new Salsa20(key, key.Length);
-            s.SetIV(file.AsSpan(0, 8));
-            s.Decrypt(file.AsSpan(8), file.Length - 8);
+            s.SetIV(iv);
+            s.Decrypt(file.AsSpan(8), file.Length - 12);
 
-            int rawSize = BinaryPrimitives.ReadInt32LittleEndian(file.AsSpan(10, 4));
+            // Decompress part - Entering compression header 
+            sr.ReadByte();
+            sr.ReadByte();
+            int rawSize = sr.ReadInt32();
 
-            /* Deflate starts right after
-            int[] test = new int[0x20];
-            var decryptedFile = File.ReadAllBytes(@"");
-            var encryptedHeader = decryptedFile.AsSpan(0x84, 0x80);
-            */
+            int deflatedSize = file.Length - (8 + 12); // IV + Header + CRC at the bottom
+            byte[] deflateData = sr.ReadBytes(deflatedSize);
+            byte[] inflatedData = new byte[rawSize];
 
-            /* Flip header stuff
-            int storagePos = 0;
-            for (int i = encryptedHeader.Length - 1; i >= 0; i--)
-                test[storagePos >> 2] |= encryptedHeader[i] << (8 * (storagePos++ & 3));
-            */
+            ICSharpCodeInflater d = new ICSharpCodeInflater(true);
+            d.SetInput(deflateData);
+            d.Inflate(inflatedData);
 
-            // 0x80 blobs might be related to SHA512, seen code for it
+            SpanReader sr2 = new SpanReader(inflatedData);
+            short header1Size = sr2.ReadInt16();
+            byte[] header1 = sr2.ReadBytes(header1Size);
+
+            short header2Size = sr2.ReadInt16();
+            byte[] header2 = sr2.ReadBytes(header2Size);
+
+            int nSection = sr2.ReadInt32();
+            int entrypoint = sr2.ReadInt32();
+
+            var unk = new BufferReverser();
+            unk.InitReverse(header1);
+
+            byte[] elfData = inflatedData.Skip(0x104).ToArray();
+            using (var hash = SHA512.Create())
+            {
+                var hashedInputBytes = hash.ComputeHash(elfData);
+            }
         }
 
         public static readonly byte[] k = new byte[16]

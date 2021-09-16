@@ -70,6 +70,15 @@ namespace PDISTD
                 length -= 0x40;
             }
 
+            if (length > 0)
+            {
+                Hash(o);
+                Increment();
+
+                // Remaining bytes
+                for (int i = 0; i < length; i++)
+                    bytes[pos + i] ^= o[i];
+            }
         }
 
         private void Hash(byte[] output)
